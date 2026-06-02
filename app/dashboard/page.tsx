@@ -1,25 +1,54 @@
 "use client"
-import { useState } from "react"
-import Link from "next/link"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
+import { supabase } from "@/lib/supabase"
 
-const kpis = [
-  { label: "Animals Detected", value: 0 },
-  { label: "Videos Analyzed", value: 0 },
-  { label: "Anomalies Detected", value: 0 },
-  { label: "Reports Generated", value: 0 },
-]
+type Analysis = {
+  id: string
+  filename: string
+  total_detections: number
+  detections: any
+  status: string
+  created_at: string
+}
 
 export default function DashboardPage() {
   const [bannerOpen, setBannerOpen] = useState(true)
+  const [analyses, setAnalyses] = useState<Analysis[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchData() {
+      const { data } = await supabase
+        .from("analyses")
+        .select("*")
+        .order("created_at", { ascending: false })
+      if (data) setAnalyses(data)
+      setLoading(false)
+    }
+    fetchData()
+  }, [])
+
+  const totalAnimals = analyses.reduce((acc, a) => acc + (a.total_detections || 0), 0)
+  const totalVideos = analyses.length
+  const totalAnomalies = analyses.filter(a => a.detections?.anomalies && a.detections.anomalies !== "None detected").length
+
+  const kpis = [
+    { label: "Animals Detected", value: totalAnimals },
+    { label: "Videos Analyzed", value: totalVideos },
+    { label: "Anomalies Detected", value: totalAnomalies },
+    { label: "Reports Generated", value: totalVideos },
+  ]
 
   return (
     <main className="min-h-screen bg-black text-white p-8">
       {bannerOpen && (
         <div className="mb-6 flex items-start justify-between gap-4 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
           <div>
-            <p className="text-sm font-medium text-yellow-400">No anomalies detected yet</p>
-            <p className="text-xs text-gray-400">You'll see real-time alerts here once analyses begin reporting unusual behavior.</p>
+            <p className="text-sm font-medium text-yellow-400">
+              {totalAnomalies > 0 ? `${totalAnomalies} anomalies detected!` : "No anomalies detected yet"}
+            </p>
+            <p className="text-xs text-gray-400">Real-time alerts from your analyses.</p>
           </div>
           <button onClick={() => setBannerOpen(false)} className="text-gray-400 hover:text-white text-sm">
             Dismiss
@@ -38,8 +67,8 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-400">{k.label}</p>
                 <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
               </div>
-              <p className="mt-3 text-3xl font-semibold">{k.value}</p>
-              <p className="mt-1 text-xs text-gray-400">No change in last 24h</p>
+              <p className="mt-3 text-3xl font-semibold">{loading ? "..." : k.value}</p>
+              <p className="mt-1 text-xs text-gray-400">Updated in real-time</p>
             </CardContent>
           </Card>
         ))}
@@ -47,72 +76,53 @@ export default function DashboardPage() {
 
       <Card className="mt-6">
         <CardContent>
-          <p className="text-base font-medium text-white mb-4">Detection Activity</p>
-          <EmptyChart />
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardContent className="p-0">
-          <p className="text-base font-medium text-white p-6 pb-0">Recent Analyses</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left px-6 py-3 text-gray-400 font-medium">File Name</th>
-                  <th className="text-left px-6 py-3 text-gray-400 font-medium">Species</th>
-                  <th className="text-left px-6 py-3 text-gray-400 font-medium">Status</th>
-                  <th className="text-left px-6 py-3 text-gray-400 font-medium">Anomalies</th>
-                  <th className="text-left px-6 py-3 text-gray-400 font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={5} className="py-16 text-center text-sm text-gray-400">
-                    No analyses found
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <p className="text-base font-medium text-white mb-4">Recent Analyses</p>
+          {loading ? (
+            <p className="text-center text-gray-400 py-8">Loading...</p>
+          ) : analyses.length === 0 ? (
+            <p className="text-center text-gray-400 py-8">No analyses found</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800">
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">File Name</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Species</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Anomalies</th>
+                    <th className="text-left px-4 py-3 text-gray-400 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analyses.map((a) => (
+                    <tr key={a.id} className="border-b border-gray-800 hover:bg-gray-900 transition">
+                      <td className="px-4 py-3 text-white truncate max-w-[200px]">{a.filename}</td>
+                      <td className="px-4 py-3 text-white">{a.detections?.species || "Unknown"}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs px-2 py-1 rounded-full border border-green-500/40 text-green-400 bg-green-500/10">
+                          {a.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {a.detections?.anomalies && a.detections.anomalies !== "None detected" ? (
+                          <span className="text-xs px-2 py-1 rounded-full border border-red-500/40 text-red-400 bg-red-500/10">
+                            {a.detections.anomalies}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">None</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">
+                        {new Date(a.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </main>
-  )
-}
-
-function EmptyChart() {
-  const w = 800
-  const h = 260
-  const padL = 40
-  const padB = 28
-  const rows = 5
-  const cols = 7
-  const xLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-  const innerW = w - padL - 10
-  const innerH = h - padB - 10
-
-  return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[260px]">
-        {Array.from({ length: rows + 1 }).map((_, i) => {
-          const y = 10 + (innerH / rows) * i
-          return <line key={`h${i}`} x1={padL} x2={w - 10} y1={y} y2={y} stroke="#1f2937" strokeWidth={1} />
-        })}
-        {Array.from({ length: cols + 1 }).map((_, i) => {
-          const x = padL + (innerW / cols) * i
-          return <line key={`v${i}`} x1={x} x2={x} y1={10} y2={h - padB} stroke="#1f2937" strokeWidth={1} />
-        })}
-        {Array.from({ length: rows + 1 }).map((_, i) => {
-          const y = 10 + (innerH / rows) * i
-          return <text key={`yl${i}`} x={padL - 8} y={y + 4} textAnchor="end" fill="#6b7280" fontSize={10}>{(rows - i) * 20}</text>
-        })}
-        {xLabels.map((lbl, i) => {
-          const x = padL + (innerW / cols) * i + innerW / cols / 2
-          return <text key={`xl${i}`} x={x} y={h - 8} textAnchor="middle" fill="#6b7280" fontSize={10}>{lbl}</text>
-        })}
-        <text x={w / 2} y={h / 2} textAnchor="middle" fill="#6b7280" fontSize={12}>No detection activity yet</text>
-      </svg>
-    </div>
   )
 }
